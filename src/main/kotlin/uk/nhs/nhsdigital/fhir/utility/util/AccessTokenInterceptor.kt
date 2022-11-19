@@ -6,7 +6,7 @@ import ca.uhn.fhir.rest.client.api.IHttpResponse
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager
 import org.springframework.security.oauth2.core.OAuth2AccessToken
-import uk.nhsdigital.fhir.utility.configuration.REGISTRATION_ID
+import uk.nhs.nhsdigital.fhir.utility.configuration.REGISTRATION_ID
 
 class AccessTokenInterceptor(private val authorizedClientManager: OAuth2AuthorizedClientManager) : IClientInterceptor {
     override fun interceptRequest(request: IHttpRequest?) {

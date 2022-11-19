@@ -1,4 +1,4 @@
-package uk.nhsdigital.fhir.utility.configuration
+package uk.nhs.nhsdigital.fhir.utility.configuration
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.ConstructorBinding
@@ -7,7 +7,6 @@ import org.springframework.boot.context.properties.ConstructorBinding
 @ConfigurationProperties(prefix = "fhir")
 data class FHIRServerProperties(
     var server: Server,
-    var igC: String?,
     var ig: String?
 ) {
     data class Server(
