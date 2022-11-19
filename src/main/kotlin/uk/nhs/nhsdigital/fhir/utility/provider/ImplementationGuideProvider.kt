@@ -11,27 +11,33 @@ import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException
 import com.google.gson.JsonElement
 import kotlinx.coroutines.*
 import mu.KLogging
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
+import org.apache.commons.io.FileUtils
+import org.apache.commons.io.IOUtils
+import org.apache.commons.io.filefilter.DirectoryFileFilter
+import org.apache.commons.io.filefilter.RegexFileFilter
+import org.hl7.fhir.common.hapi.validation.support.SnapshotGeneratingValidationSupport
+import org.hl7.fhir.common.hapi.validation.support.ValidationSupportChain
 import org.hl7.fhir.r4.model.*
 import org.hl7.fhir.utilities.npm.NpmPackage
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import uk.nhs.nhsdigital.fhir.utility.awsProvider.AWSImplementationGuide
 import uk.nhs.nhsdigital.fhir.utility.interceptor.CognitoAuthInterceptor
-import java.io.FileNotFoundException
-import java.io.IOException
-import java.io.InputStream
+import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
+import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.time.Duration
+import java.time.Instant
 import java.util.*
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
-import org.hl7.fhir.common.hapi.validation.support.CommonCodeSystemsTerminologyService
-import org.hl7.fhir.common.hapi.validation.support.SnapshotGeneratingValidationSupport
-import org.hl7.fhir.common.hapi.validation.support.ValidationSupportChain
-import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
-import java.time.Duration
-import java.time.Instant
-import kotlin.coroutines.EmptyCoroutineContext
+
 
 @Component
 class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: FhirContext,
@@ -61,7 +67,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
     }
 
     @Operation(name = "\$cacheIG", idempotent = true)
-    fun convertOpenAPI(
+    fun cacheIG(
         servletRequest: HttpServletRequest,
         servletResponse: HttpServletResponse,
         @OperationParam(name="name") igNameParameter : String,
@@ -144,7 +150,50 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
               //  logger.warn(profile.url + " ok")
             }
         }
-        if (allOk) println("We are all clear to cache the package!")
+        if (allOk)
+        {
+            println("We are all clear to cache the package!")
+            val npmPackage = packages[0]
+            npmPackage.save(File("package"))
+            // Follow same convention as simplifier
+            Files.move(File("package/"+name+"/examples").toPath(), File("package/"+name+"/package/examples").toPath(), StandardCopyOption.REPLACE_EXISTING);
+            CreateTarGZ("package/"+name  ,name+"-"+version+".tgz")
+        }
+    }
+
+    @Throws(IOException::class)
+    fun CreateTarGZ(inputDirectoryPath: String?, outputPath: String?) {
+        val inputFile = File(inputDirectoryPath)
+        val outputFile = File(outputPath)
+        FileOutputStream(outputFile).use { fileOutputStream ->
+            BufferedOutputStream(fileOutputStream).use { bufferedOutputStream ->
+                GzipCompressorOutputStream(bufferedOutputStream).use { gzipOutputStream ->
+                    TarArchiveOutputStream(gzipOutputStream).use { tarArchiveOutputStream ->
+                        tarArchiveOutputStream.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_POSIX)
+                        tarArchiveOutputStream.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU)
+                        val files: List<File?> = ArrayList<File>(
+                            FileUtils.listFiles(
+                                inputFile,
+                                RegexFileFilter("^(.*?)"),
+                                DirectoryFileFilter.DIRECTORY
+                            )
+                        )
+                        for (i in files.indices) {
+                            val currentFile = files[i]
+                            val relativeFilePath = inputFile.toURI().relativize(
+                                File(currentFile!!.absolutePath).toURI()
+                            ).path
+                            val tarEntry = TarArchiveEntry(currentFile, relativeFilePath)
+                            tarEntry.size = currentFile.length()
+                            tarArchiveOutputStream.putArchiveEntry(tarEntry)
+                            tarArchiveOutputStream.write(IOUtils.toByteArray(FileInputStream(currentFile)))
+                            tarArchiveOutputStream.closeArchiveEntry()
+                        }
+                        tarArchiveOutputStream.close()
+                    }
+                }
+            }
+        }
     }
 
     fun generateSnapshots(supportChain: IValidationSupport) {
