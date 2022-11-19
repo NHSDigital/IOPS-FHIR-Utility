@@ -63,7 +63,7 @@ class AWSImplementationGuide(val messageProperties: MessageProperties, val awsCl
         }
     }
 
-    public fun getImplementationGuide(url : String): ImplementationGuide? {
+    public fun get(url : String): ImplementationGuide? {
         var bundle: Bundle? = null
         var retry = 3
         while (retry > 0) {

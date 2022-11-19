@@ -1,14 +1,17 @@
 package uk.nhs.nhsdigital.fhir.utility.provider
 
 import ca.uhn.fhir.context.FhirContext
+import ca.uhn.fhir.context.support.DefaultProfileValidationSupport
+import ca.uhn.fhir.context.support.IValidationSupport
+import ca.uhn.fhir.context.support.ValidationSupportContext
 import ca.uhn.fhir.rest.annotation.*
 import ca.uhn.fhir.rest.param.TokenParam
 import ca.uhn.fhir.rest.server.IResourceProvider
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException
 import com.google.gson.JsonElement
+import kotlinx.coroutines.*
 import mu.KLogging
 import org.hl7.fhir.r4.model.*
-import org.hl7.fhir.r4.model.Enumerations.FHIRVersion
 import org.hl7.fhir.utilities.npm.NpmPackage
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
@@ -19,15 +22,22 @@ import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.charset.StandardCharsets
 import java.util.*
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
+import org.hl7.fhir.common.hapi.validation.support.CommonCodeSystemsTerminologyService
+import org.hl7.fhir.common.hapi.validation.support.SnapshotGeneratingValidationSupport
+import org.hl7.fhir.common.hapi.validation.support.ValidationSupportChain
+import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
+import java.time.Duration
+import java.time.Instant
+import kotlin.coroutines.EmptyCoroutineContext
 
 @Component
 class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: FhirContext,
                                   private val cognitoAuthInterceptor: CognitoAuthInterceptor,
-                                  private val awsImplementationGuide: AWSImplementationGuide
+                                  private val awsImplementationGuide: AWSImplementationGuide,
+                                  private val implementationGuideParser: ImplementationGuideParser
 ) : IResourceProvider {
     companion object : KLogging()
 
@@ -56,7 +66,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         servletResponse: HttpServletResponse,
         @OperationParam(name="name") igNameParameter : String,
         @OperationParam(name="version") igVersionParameter : String
-    ) : ImplementationGuide? {
+    ) : ImplementationGuide?  {
         val implementationGuide = ImplementationGuide()
         var version = igVersionParameter ?: servletRequest.getParameter("version")
         var name = igNameParameter ?: servletRequest.getParameter("name")
@@ -69,7 +79,6 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                 val igVersion = igDetails.get("version").asString.replace("\"","")
                 val igAuthor=igDetails.get("author").asString.replace("\"","")
                 if (igVersion.equals(version) && igName.equals(name)) {
-                    logger.info("Found it")
                     implementationGuide.url="https://fhir.nhs.uk/ImplementationGuide/"+name+"-"+version
                     implementationGuide.description = igDesc
                     implementationGuide.name=name
@@ -80,20 +89,123 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                 } else if (igName.equals("hl7.fhir.r4.core")) {
                     //implementationGuide.fhirVersion.add("4.0.0")
                 } else {
+                    val dependentPackageUrl = "https://fhir.nhs.uk/ImplementationGuide/"+igName+"-"+igVersion
                     implementationGuide.dependsOn.add(
                         ImplementationGuide.ImplementationGuideDependsOnComponent()
-                            .setUri("https://fhir.nhs.uk/ImplementationGuide/"+igName+"-"+igVersion)
+                            .setUri(dependentPackageUrl)
                             .setVersion(igVersion)
                             .setPackageId(igName)
                     )
+                    val dependentIG = awsImplementationGuide.get(dependentPackageUrl)
+                    if (dependentIG == null) throw UnprocessableEntityException("Dependent IG ("+dependentPackageUrl+") must be processed beforehand. Aborted")
+                    if (dependentIG.getExtensionByUrl("https://fhir.nhs.uk/StructureDefinition/Extension-IGPackage") == null){
+                        throw UnprocessableEntityException("Dependent package ("+dependentPackageUrl+") has not been processed beforehand or is being processed. Aborted")
+                    }
                 }
             }
         }
         val outcome = awsImplementationGuide.createUpdate(implementationGuide)
-        if (outcome != null) return outcome
+        if (outcome != null) {
+
+            // Fire (FHIR) and forget
+
+            GlobalScope.launch {
+                expandIg(name, version, packages)
+            }
+
+
+            return outcome
+        }
         return null
     }
 
+
+    private fun expandIg(name: String?, version: String?, packages: List<NpmPackage>) {
+        println("delay started")
+        //  delay(123123)
+        val supportChain = ValidationSupportChain(
+            DefaultProfileValidationSupport(fhirContext),
+            SnapshotGeneratingValidationSupport(fhirContext),
+        )
+        packages.map(implementationGuideParser::createPrePopulatedValidationSupport)
+            .forEach(supportChain::addValidationSupport)
+        generateSnapshots(supportChain)
+        println("Delay called")
+    }
+
+    fun generateSnapshots(supportChain: IValidationSupport) {
+        val structureDefinitions = supportChain.fetchAllStructureDefinitions<StructureDefinition>() ?: return
+        val context = ValidationSupportContext(supportChain)
+        structureDefinitions
+            .filter { shouldGenerateSnapshot(it) }
+            .forEach {
+                try {
+                    circularReferenceCheck(it,supportChain)
+                } catch (e: Exception) {
+                    logger.error("Failed to generate snapshot for $it", e)
+                }
+            }
+
+        structureDefinitions
+            .filter { shouldGenerateSnapshot(it) }
+            .forEach {
+                try {
+                    val start: Instant = Instant.now()
+                    supportChain.generateSnapshot(context, it, it.url, "https://fhir.nhs.uk/R4", it.name)
+                    val end: Instant = Instant.now()
+                    val duration: Duration = Duration.between(start, end)
+                    logger.info(duration.toMillis().toString() + " ms $it")
+                } catch (e: Exception) {
+                    logger.error("Failed to generate snapshot for $it", e)
+                }
+            }
+    }
+
+    private fun circularReferenceCheck(structureDefinition: StructureDefinition, supportChain: IValidationSupport): StructureDefinition {
+        if (structureDefinition.hasSnapshot()) logger.error(structureDefinition.url + " has snapshot!!")
+        structureDefinition.differential.element.forEach{
+            //   ||
+            if ((
+                        it.id.endsWith(".partOf") ||
+                                it.id.endsWith(".basedOn") ||
+                                it.id.endsWith(".replaces") ||
+                                it.id.contains("Condition.stage.assessment") ||
+                                it.id.contains("Observation.derivedFrom") ||
+                                it.id.contains("Observation.hasMember") ||
+                                it.id.contains("CareTeam.encounter") ||
+                                it.id.contains("CareTeam.reasonReference") ||
+                                it.id.contains("ServiceRequest.encounter") ||
+                                it.id.contains("ServiceRequest.reasonReference") ||
+                                it.id.contains("EpisodeOfCare.diagnosis.condition") ||
+                                it.id.contains("Encounter.diagnosis.condition") ||
+                                it.id.contains("Encounter.reasonReference")
+                        )
+                && it.hasType()) {
+                logger.warn(structureDefinition.url + " has circular references ("+ it.id + ")")
+                it.type.forEach{
+                    if (it.hasTargetProfile())
+                        it.targetProfile.forEach {
+                            it.value = getBase(it.value, supportChain);
+                        }
+                }
+            }
+        }
+        return structureDefinition
+    }
+
+    private fun getBase(profile : String,supportChain: IValidationSupport): String? {
+        val structureDefinition : StructureDefinition=
+            supportChain.fetchStructureDefinition(profile) as StructureDefinition;
+        if (structureDefinition.hasBaseDefinition()) {
+            var baseProfile = structureDefinition.baseDefinition
+            if (baseProfile.contains(".uk")) baseProfile = getBase(baseProfile, supportChain)
+            return baseProfile
+        }
+        return null;
+    }
+    private fun shouldGenerateSnapshot(structureDefinition: StructureDefinition): Boolean {
+        return !structureDefinition.hasSnapshot() && structureDefinition.derivation == StructureDefinition.TypeDerivationRule.CONSTRAINT
+    }
     open fun downloadPackage(name : String, version : String) : List<NpmPackage> {
         logger.info("Downloading {} - {}",name, version)
         val inputStream = readFromUrl("https://packages.simplifier.net/"+name+"/"+version)
@@ -102,14 +214,13 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
 
         val dependency= npmPackage.npm.get("dependencies")
 
-        if (dependency.isJsonArray) logger.info("isJsonArray")
         if (dependency.isJsonObject) {
-            logger.info("isJsonObject")
+
             val obj = dependency.asJsonObject
 
             val entrySet: Set<Map.Entry<String?, JsonElement?>> = obj.entrySet()
             for (entry in entrySet) {
-                logger.info(entry.key + " version =  " + entry.value)
+
                 if (entry.key != "hl7.fhir.r4.core") {
                     val version = entry.value?.asString?.replace("\"","")
                    if (entry.key != null && version != null) {
@@ -124,8 +235,6 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
             }
         }
         packages.add(npmPackage)
-        if (dependency.isJsonNull) logger.info("isNull")
-        if (dependency.isJsonPrimitive) logger.info("isJsonPrimitive")
 
         return packages
     }
