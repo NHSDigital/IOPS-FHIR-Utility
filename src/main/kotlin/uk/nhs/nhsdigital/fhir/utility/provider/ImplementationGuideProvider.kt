@@ -130,7 +130,21 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         packages.map(implementationGuideParser::createPrePopulatedValidationSupport)
             .forEach(supportChain::addValidationSupport)
         generateSnapshots(supportChain)
-        println("Delay called")
+        val profiles = implementationGuideParser.getResourcesOfType(packages,StructureDefinition::class.java)
+        var allOk = true
+        for (profile in profiles) {
+            if (profile.hasSnapshot()) {
+                logger.warn(profile.url + " NO Snapshot")
+                val found = supportChain.fetchStructureDefinition(profile.url)
+                if (found != null) {
+                    println("Found it")
+                }
+                allOk = false
+            } else {
+              //  logger.warn(profile.url + " ok")
+            }
+        }
+        if (allOk) println("We are all clear to cache the package!")
     }
 
     fun generateSnapshots(supportChain: IValidationSupport) {
