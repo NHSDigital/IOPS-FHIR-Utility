@@ -31,7 +31,6 @@ import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Duration
@@ -147,17 +146,19 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                 }
             }
         }
-        val outcome = awsImplementationGuide.createUpdate(implementationGuide)
-        if (outcome != null) {
+        val implementationGuideNew = awsImplementationGuide.createUpdate(implementationGuide)
+        if (implementationGuideNew != null) {
 
             // Fire (FHIR) and forget
-
+            if (implementationGuideNew.getExtensionByUrl(IG_EXTENSION) != null){
+                throw UnprocessableEntityException("Package "+implementationGuideNew.url+" has already been processed. Aborted")
+            }
             GlobalScope.launch {
-                expandIg(outcome, name, version, packages)
+                expandIg(implementationGuideNew, name, version, packages)
             }
 
 
-            return outcome
+            return implementationGuideNew
         }
         return null
     }
@@ -173,47 +174,58 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         packages.map(implementationGuideParser::createPrePopulatedValidationSupport)
             .forEach(supportChain::addValidationSupport)
         generateSnapshots(supportChain)
-        val profiles = implementationGuideParser.getResourcesOfType(packages,StructureDefinition::class.java)
-        var allOk = true
-        for (profile in profiles) {
-            if (profile.hasSnapshot()) {
-                logger.error(profile.url + " NO Snapshot")
-                val found = supportChain.fetchStructureDefinition(profile.url)
-                if (found != null) {
-                    println("Found it")
-                }
-                allOk = false
-            } else {
-              //  logger.warn(profile.url + " ok")
-            }
-        }
-        if (allOk)
-        {
-            for (npmPackage in packages) {
-                if (npmPackage.name().equals(name) && npmPackage.version().equals(version)) {
-                    npmPackage.save(File("package"))
-                    // Follow same convention as simplifier
-                    Files.move(
-                        File("package/" + name + "/examples").toPath(),
-                        File("package/" + name + "/package/examples").toPath(),
-                        StandardCopyOption.REPLACE_EXISTING
-                    );
-                    val outputFilename=name + "-" + version + ".tgz"
-                    CreateTarGZ("package/" + name,outputFilename )
-                    val outcome = awsBinary.create(outputFilename)
-                    if (outcome != null && outcome.resource != null && outcome.resource is Binary) {
-                        var binary : Binary = outcome.resource as Binary
-                        implementationGuide.addExtension(
-                            Extension()
-                                .setUrl(IG_EXTENSION)
-                                .setValue(Reference()
-                                    .setReference("Binary/"+binary.id))
-                        )
-                        awsImplementationGuide.createUpdate(implementationGuide)
+
+        for (npmPackage in packages) {
+            if (npmPackage.name().equals(name) && npmPackage.version().equals(version)) {
+                val jsonParser = fhirContext.newJsonParser()
+                for (folderName in npmPackage.folders) {
+                    val folder = folderName.value
+                    println("Folder "+folder.name)
+                    val removeList = mutableMapOf<String,StructureDefinition>()
+                    // Build list of profiles to be removed
+                    for(file in folder.listFiles()){
+                        val content = npmPackage.load(folderName.key, file)
+                        val resource = jsonParser.parseResource(content)
+                        if (resource is StructureDefinition) {
+                            println("Adding to remove list "+resource.url)
+                            removeList.put(file,resource)
+                        } else {
+                            println("Skipping " + file)
+                        }
+                    }
+                    for (entry in removeList) {
+                        // Remove old entry
+                        folder.removeFile(entry.key)
+                        // Add new entry
+                        val content = jsonParser.encodeResourceToString(supportChain.fetchStructureDefinition(entry.value.url))
+                        if (content == null) throw UnprocessableEntityException("Error encoding "+entry.key)
+                        println("Readding  " + entry.key)
+                        npmPackage.addFile(folder.name,entry.key,content.toByteArray(),"StructureDefinition")
                     }
                 }
-            }
 
+                // Saves the processed package
+                npmPackage.save(File("package"))
+                // Follow same convention as simplifier
+                Files.move(
+                    File("package/" + name + "/examples").toPath(),
+                    File("package/" + name + "/package/examples").toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                );
+                val outputFilename=name + "-" + version + ".tgz"
+                CreateTarGZ("package/" + name,outputFilename )
+                val outcome = awsBinary.create(outputFilename)
+                if (outcome != null && outcome.resource != null && outcome.resource is Binary) {
+                    var binary : Binary = outcome.resource as Binary
+                    implementationGuide.addExtension(
+                        Extension()
+                            .setUrl(IG_EXTENSION)
+                            .setValue(Reference()
+                                .setReference("Binary/"+binary.id))
+                    )
+                    awsImplementationGuide.createUpdate(implementationGuide)
+                }
+            }
         }
     }
 
@@ -327,7 +339,16 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
     }
     open fun downloadPackage(name : String, version : String) : List<NpmPackage> {
         logger.info("Downloading {} - {}",name, version)
-        val inputStream = readFromUrl("https://packages.simplifier.net/"+name+"/"+version)
+        var inputStream : InputStream
+
+        // Try self first
+        try {
+            val packUrl =  "https://fhir.nhs.uk/ImplementationGuide/" + name+"-" + version
+            inputStream = readFromUrl("http://localhost:9006/FHIR/R4/ImplementationGuide/\$package?url="+packUrl )
+        } catch (ex : Exception) {
+            logger.info("Package not found in AWS Cache "+name+ "-"+version)
+            inputStream = readFromUrl("https://packages.simplifier.net/" + name + "/" + version)
+        }
         val packages = arrayListOf<NpmPackage>()
         val npmPackage = NpmPackage.fromPackage(inputStream)
 
