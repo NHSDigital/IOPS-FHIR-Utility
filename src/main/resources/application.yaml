@@ -15,8 +15,8 @@ management:
 fhir:
   server:
     name: IOPS FHIR Utility
-    baseUrl: https://3cdzg7kbj4.execute-api.eu-west-2.amazonaws.com/poc/Conformance
-    version: 0.0.1
+    baseUrl: https://3cdzg7kbj4.execute-api.eu-west-2.amazonaws.com/poc/utility
+    version: 1.0.1
 
 ###Remote terminology validation:
 

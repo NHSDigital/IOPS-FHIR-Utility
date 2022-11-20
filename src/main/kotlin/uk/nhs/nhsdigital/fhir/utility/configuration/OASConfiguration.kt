@@ -10,12 +10,11 @@ import io.swagger.v3.oas.models.media.Content
 import io.swagger.v3.oas.models.media.MediaType
 import io.swagger.v3.oas.models.media.StringSchema
 import io.swagger.v3.oas.models.parameters.Parameter
-import io.swagger.v3.oas.models.parameters.RequestBody
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-
+import io.swagger.v3.oas.models.servers.Server
 
 @Configuration
 class OASConfiguration {
@@ -45,11 +44,11 @@ class OASConfiguration {
                     .termsOfService("http://swagger.io/terms/")
                     .license(License().name("Apache 2.0").url("http://springdoc.org"))
             )
-/*
+
         oas.addServersItem(
             Server().description(fhirServerProperties.server.name).url(fhirServerProperties.server.baseUrl)
         )
-  */
+
         oas.addTagsItem(
             io.swagger.v3.oas.models.tags.Tag()
                 .name(IG)

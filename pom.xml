@@ -10,7 +10,7 @@
     </parent>
     <groupId>uk.nhs.nhsdigital</groupId>
     <artifactId>fhir-validator</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.1</version>
     <name>fhir-utility</name>
     <description>IOPS FHIR Utility Server</description>
 

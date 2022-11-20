@@ -26,6 +26,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import uk.nhs.nhsdigital.fhir.utility.awsProvider.AWSBinary
 import uk.nhs.nhsdigital.fhir.utility.awsProvider.AWSImplementationGuide
+import uk.nhs.nhsdigital.fhir.utility.configuration.FHIRServerProperties
 import uk.nhs.nhsdigital.fhir.utility.interceptor.CognitoAuthInterceptor
 import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
 import java.io.*
@@ -45,7 +46,8 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                                   private val cognitoAuthInterceptor: CognitoAuthInterceptor,
                                   private val awsImplementationGuide: AWSImplementationGuide,
                                   private val awsBinary: AWSBinary,
-                                  private val implementationGuideParser: ImplementationGuideParser
+                                  private val implementationGuideParser: ImplementationGuideParser,
+                                  private val fhirServerProperties: FHIRServerProperties
 ) : IResourceProvider {
     companion object : KLogging()
 
@@ -346,7 +348,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         // Try self first
         try {
             val packUrl =  "https://fhir.nhs.uk/ImplementationGuide/" + name+"-" + version
-            inputStream = readFromUrl("http://localhost:9006/FHIR/R4/ImplementationGuide/\$package?url="+packUrl )
+            inputStream = readFromUrl(fhirServerProperties.server.baseUrl + "/FHIR/R4/ImplementationGuide/\$package?url="+packUrl )
         } catch (ex : Exception) {
             logger.info("Package not found in AWS Cache "+name+ "-"+version)
             inputStream = readFromUrl("https://packages.simplifier.net/" + name + "/" + version)
