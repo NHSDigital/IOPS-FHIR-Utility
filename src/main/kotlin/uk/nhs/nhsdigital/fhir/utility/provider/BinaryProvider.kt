@@ -33,8 +33,8 @@ class BinaryProvider(@Qualifier("R4") private val fhirContext: FhirContext,
         val json = cognitoAuthInterceptor.getBinaryLocation(httpRequest.pathInfo)
         /// BLAH
         val preSignedUrl = json.getString("presignedGetUrl")
-        return cognitoAuthInterceptor.getBinary(preSignedUrl)
-
+       // Using direct return at present return cognitoAuthInterceptor.getBinary(preSignedUrl)
+        return null
     }
 
 }

@@ -31,6 +31,7 @@ import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
 import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Duration
@@ -48,6 +49,8 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                                   private val implementationGuideParser: ImplementationGuideParser
 ) : IResourceProvider {
     companion object : KLogging()
+
+    val IG_EXTENSION = "https://fhir.nhs.uk/StructureDefinition/Extension-IGPackage"
 
     override fun getResourceType(): Class<ImplementationGuide> {
         return ImplementationGuide::class.java
@@ -72,11 +75,33 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
     fun packageGet(
         servletRequest: HttpServletRequest,
         servletResponse: HttpServletResponse,
-        @OperationParam(name="name") igNameParameter : String,
-        @OperationParam(name="version") igVersionParameter : String
+        @OperationParam(name="url") igPackage : String
     )
     {
+        val implementationGuide = awsImplementationGuide.get(igPackage)
+        if (implementationGuide == null) throw UnprocessableEntityException("ImplementationGuide not found")
+        if (implementationGuide.getExtensionByUrl(IG_EXTENSION) == null){
+            throw UnprocessableEntityException("Dependent package ("+igPackage+") has not been processed beforehand or is being processed. Aborted")
+        }
+        val igExtValue = implementationGuide.getExtensionByUrl(IG_EXTENSION).value
+        if (igExtValue == null || !(igExtValue is Reference) ) throw UnprocessableEntityException("Malformed ImplementationGuide extension")
+        val json = cognitoAuthInterceptor.getBinaryLocation("/"+(igExtValue as Reference).reference)
 
+        val preSignedUrl = json.getString("presignedGetUrl")
+        val connection = cognitoAuthInterceptor.getBinary(preSignedUrl)
+        if (connection!=null ) {
+            servletResponse.setContentType(connection.getHeaderField("Content-Type"))
+            servletResponse.setCharacterEncoding("UTF-8")
+           // servletResponse.setContentLength(inputStream.)
+            val buffer = ByteArray(20 * 1024)
+            val outputStream = servletResponse.getOutputStream()
+            while (true) {
+                val readSize: Int = connection.inputStream.read(buffer)
+                if (readSize == -1) break
+                    outputStream.write(buffer, 0, readSize)
+            }
+        }
+      //  servletResponse.writer.flush()
     }
     @Operation(name = "\$cacheIG", idempotent = true)
     fun cacheIG(
@@ -116,7 +141,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                     )
                     val dependentIG = awsImplementationGuide.get(dependentPackageUrl)
                     if (dependentIG == null) throw UnprocessableEntityException("Dependent IG ("+dependentPackageUrl+") must be processed beforehand. Aborted")
-                    if (dependentIG.getExtensionByUrl("https://fhir.nhs.uk/StructureDefinition/Extension-IGPackage") == null){
+                    if (dependentIG.getExtensionByUrl(IG_EXTENSION) == null){
                         throw UnprocessableEntityException("Dependent package ("+dependentPackageUrl+") has not been processed beforehand or is being processed. Aborted")
                     }
                 }
@@ -180,7 +205,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                         var binary : Binary = outcome.resource as Binary
                         implementationGuide.addExtension(
                             Extension()
-                                .setUrl("https://fhir.nhs.uk/StructureDefinition/Extension-IGPackage")
+                                .setUrl(IG_EXTENSION)
                                 .setValue(Reference()
                                     .setReference("Binary/"+binary.id))
                         )

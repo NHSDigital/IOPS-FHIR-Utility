@@ -119,19 +119,19 @@ class OASConfiguration {
                     .summary("Read Binary. This returns the raw implementation guide")
                     .responses(getApiResponsesBinary())
                     .addParametersItem(Parameter()
-                        .name("id")
-                        .`in`("path")
-                        .required(false)
+                        .name("url")
+                        .`in`("query")
+                        .required(true)
                         .style(Parameter.StyleEnum.SIMPLE)
-                        .description("id of the resource")
+                        .description("url of the ImplementationGuide")
                         .schema(StringSchema())
-                        .example("7eabe51e-a10e-4f6b-a032-db4adaf35423")
+                        .example("https://fhir.nhs.uk/ImplementationGuide/fhir.r4.ukcore.stu1-0.5.1")
                     )
             )
 
 
 
-        oas.path("/FHIR/R4/Binary/{id}",binaryItem)
+        oas.path("/FHIR/R4/ImplementationGuide/\$package",binaryItem)
 
 
         return oas

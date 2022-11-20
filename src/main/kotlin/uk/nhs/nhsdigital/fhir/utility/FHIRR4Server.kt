@@ -24,7 +24,7 @@ class FHIRR4Server (public val fhirServerProperties: FHIRServerProperties,
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
         registerProvider(igCacheProvider)
-        registerProvider(binaryProvider)
+       // Disable for now registerProvider(binaryProvider)
 
         registerInterceptor(CapabilityStatementInterceptor(this.fhirContext,fhirServerProperties))
 

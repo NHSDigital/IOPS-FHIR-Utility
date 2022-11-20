@@ -22,13 +22,9 @@ import org.json.JSONTokener
 import org.springframework.beans.factory.annotation.Qualifier
 import uk.nhs.nhsdigital.fhir.utility.configuration.MessageProperties
 import uk.nhs.nhsdigital.mcsd.model.ResponseObject
-import java.io.BufferedReader
-import java.io.FileNotFoundException
-import java.io.IOException
-import java.io.InputStreamReader
+import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.charset.Charset
 import java.util.*
 import javax.servlet.http.HttpServletRequest
 
@@ -270,7 +266,7 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
     }
 
     @Throws(Exception::class)
-    fun getBinary(presignedUrl : String) : Binary {
+    fun getBinary(presignedUrl : String) : HttpURLConnection {
 
         var myUrl: URL? = URL(presignedUrl)
 
@@ -281,6 +277,8 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
 
         return try {
             conn.connect()
+            conn
+            /*
             val inputStream = InputStreamReader(conn.inputStream, "utf-8")
             try {
                 val binary = Binary()
@@ -296,9 +294,12 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
                 }
                 binary.contentType = conn.getHeaderField("Content-Type");
                 return binary
+
             } finally {
+
                 inputStream.close()
             }
+             */
         }  catch (ex: FileNotFoundException) {
             throw UnprocessableEntityException(ex.message)
         } catch (ex: IOException) {
