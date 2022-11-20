@@ -225,6 +225,8 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                     )
                     awsImplementationGuide.createUpdate(implementationGuide)
                 }
+                FileUtils.deleteDirectory(File("package"));
+                val file = File(outputFilename).delete()
             }
         }
     }
