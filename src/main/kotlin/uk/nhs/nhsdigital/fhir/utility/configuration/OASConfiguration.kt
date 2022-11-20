@@ -10,6 +10,7 @@ import io.swagger.v3.oas.models.media.Content
 import io.swagger.v3.oas.models.media.MediaType
 import io.swagger.v3.oas.models.media.StringSchema
 import io.swagger.v3.oas.models.parameters.Parameter
+import io.swagger.v3.oas.models.parameters.RequestBody
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.responses.ApiResponses
 import org.springframework.context.annotation.Bean
@@ -89,7 +90,7 @@ class OASConfiguration {
         )
 
 
-        val patientItem = PathItem()
+        val implementationGuideItem = PathItem()
             .get(
                 Operation()
                     .addTagsItem(IG)
@@ -108,7 +109,29 @@ class OASConfiguration {
 
             )
 
-        oas.path("/FHIR/R4/ImplementationGuide",patientItem)
+        oas.path("/FHIR/R4/ImplementationGuide",implementationGuideItem)
+
+
+        var binaryItem = PathItem()
+            .get(
+                Operation()
+                    .addTagsItem(IG)
+                    .summary("Read Binary. This returns the raw implementation guide")
+                    .responses(getApiResponsesBinary())
+                    .addParametersItem(Parameter()
+                        .name("id")
+                        .`in`("path")
+                        .required(false)
+                        .style(Parameter.StyleEnum.SIMPLE)
+                        .description("id of the resource")
+                        .schema(StringSchema())
+                        .example("7eabe51e-a10e-4f6b-a032-db4adaf35423")
+                    )
+            )
+
+
+
+        oas.path("/FHIR/R4/Binary/{id}",binaryItem)
 
 
         return oas
@@ -121,6 +144,17 @@ class OASConfiguration {
         val exampleList = mutableListOf<Example>()
         exampleList.add(Example().value("{}"))
         response200.content = Content().addMediaType("application/fhir+json", MediaType().schema(StringSchema()._default("{}")))
+        val apiResponses = ApiResponses().addApiResponse("200",response200)
+        return apiResponses
+    }
+
+    fun getApiResponsesBinary() : ApiResponses {
+
+        val response200 = ApiResponse()
+        response200.description = "OK"
+        val exampleList = mutableListOf<Example>()
+        exampleList.add(Example().value("{}"))
+        response200.content = Content().addMediaType("*/*", MediaType().schema(StringSchema()._default("{}")))
         val apiResponses = ApiResponses().addApiResponse("200",response200)
         return apiResponses
     }

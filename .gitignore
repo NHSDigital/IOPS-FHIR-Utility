@@ -22,6 +22,7 @@ src/main/resources/*.tgz
 *.iws
 *.iml
 *.ipr
+*.tgz
 
 ### NetBeans ###
 /nbproject/private/

@@ -14,18 +14,22 @@ import com.amazonaws.services.cognitoidp.model.InitiateAuthRequest
 import com.amazonaws.services.cognitoidp.model.InitiateAuthResult
 import org.apache.commons.io.IOUtils
 import org.hl7.fhir.dstu3.model.OperationOutcome
+import org.hl7.fhir.r4.model.Binary
 import org.hl7.fhir.r4.model.Bundle
 import org.hl7.fhir.r4.model.Resource
+import org.json.JSONObject
+import org.json.JSONTokener
 import org.springframework.beans.factory.annotation.Qualifier
 import uk.nhs.nhsdigital.fhir.utility.configuration.MessageProperties
 import uk.nhs.nhsdigital.mcsd.model.ResponseObject
-
 import java.io.BufferedReader
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.charset.Charset
+import java.util.*
 import javax.servlet.http.HttpServletRequest
 
 
@@ -34,8 +38,6 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
 ) : IClientInterceptor {
 
     var authenticationResult: AuthenticationResultType? = null
-
-
 
     override fun interceptRequest(iHttpRequest: IHttpRequest) {
         getAccessToken()
@@ -164,6 +166,141 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
         } catch (ex: FileNotFoundException) {
             method.created = false
             method
+        } catch (ex: IOException) {
+            throw UnprocessableEntityException(ex.message)
+        }
+    }
+
+    @Throws(Exception::class)
+    fun postBinaryLocation(resource : Binary): JSONObject {
+
+        var myUrl: URL? = URL(messageProperties.getCdrFhirServer() + "/Binary")
+
+        val conn = myUrl?.openConnection() as HttpURLConnection
+        getAccessToken()
+        val basicAuth = "Bearer "+authenticationResult!!.idToken
+        conn.setRequestProperty("Authorization", basicAuth)
+        conn.setRequestProperty("x-api-key",messageProperties.getAwsApiKey())
+        conn.setRequestProperty("Content-Type", "application/fhir+json")
+        conn.setRequestProperty("Accept", "application/fhir+json")
+        conn.requestMethod = "POST"
+        conn.setDoOutput(true)
+        val jsonInputString = ctx.newJsonParser().encodeResourceToString(resource)
+        return try {
+            conn.getOutputStream().use { os ->
+                val input = jsonInputString.toByteArray(charset("utf-8"))
+                os.write(input, 0, input.size)
+            }
+            //conn.connect()
+            val `is` = InputStreamReader(conn.inputStream)
+            try {
+                val rd = BufferedReader(`is`)
+                val tokener = JSONTokener(rd)
+                JSONObject(tokener)
+               // json.getString("presignedPutUrl")
+            } finally {
+                `is`.close()
+            }
+        }  catch (ex: FileNotFoundException) {
+            throw UnprocessableEntityException(ex.message)
+        } catch (ex: IOException) {
+            throw UnprocessableEntityException(ex.message)
+        }
+    }
+
+    @Throws(Exception::class)
+    fun getBinaryLocation(path: String): JSONObject {
+
+        val url = messageProperties.getCdrFhirServer()
+        var myUrl: URL= URL(url + path)
+
+        val conn = myUrl.openConnection() as HttpURLConnection
+        getAccessToken()
+        val basicAuth = "Bearer "+authenticationResult!!.idToken
+        conn.setRequestProperty("Authorization", basicAuth)
+        conn.setRequestProperty("x-api-key",messageProperties.getAwsApiKey())
+        conn.setRequestProperty("Content-Type", "application/fhir+json")
+        conn.setRequestProperty("Accept", "application/fhir+json")
+        conn.requestMethod = "GET"
+        conn.setDoOutput(true)
+        return try {
+            conn.connect()
+            val `is` = InputStreamReader(conn.inputStream)
+            try {
+                val rd = BufferedReader(`is`)
+                val tokener = JSONTokener(rd)
+                JSONObject(tokener)
+            } finally {
+                `is`.close()
+            }
+        }  catch (ex: FileNotFoundException) {
+            throw UnprocessableEntityException(ex.message)
+        } catch (ex: IOException) {
+            throw UnprocessableEntityException(ex.message)
+        }
+    }
+
+    @Throws(Exception::class)
+    fun postBinary(presignedUrl : String,fileArray : ByteArray) {
+
+        var myUrl: URL? = URL(presignedUrl)
+
+        val conn = myUrl?.openConnection() as HttpURLConnection
+
+        conn.requestMethod = "PUT"
+        conn.setDoOutput(true)
+
+        return try {
+            conn.getOutputStream().use { os ->
+                os.write(fileArray, 0, fileArray.size)
+            }
+            //conn.connect()
+            val `is` = InputStreamReader(conn.inputStream)
+            try {
+                val rd = BufferedReader(`is`)
+                return
+            } finally {
+                `is`.close()
+            }
+        }  catch (ex: FileNotFoundException) {
+            throw UnprocessableEntityException(ex.message)
+        } catch (ex: IOException) {
+            throw UnprocessableEntityException(ex.message)
+        }
+    }
+
+    @Throws(Exception::class)
+    fun getBinary(presignedUrl : String) : Binary {
+
+        var myUrl: URL? = URL(presignedUrl)
+
+        val conn = myUrl?.openConnection() as HttpURLConnection
+
+        conn.requestMethod = "GET"
+        conn.setDoOutput(true)
+
+        return try {
+            conn.connect()
+            val inputStream = InputStreamReader(conn.inputStream, "utf-8")
+            try {
+                val binary = Binary()
+                BufferedReader(
+                    inputStream
+                ).use { br ->
+                    val response = StringBuilder()
+                    var responseLine: String? = null
+                    while (br.readLine().also { responseLine = it } != null) {
+                        response.append(responseLine!!.trim { it <= ' ' })
+                    }
+                    binary.setData(response.toString().toByteArray())
+                }
+                binary.contentType = conn.getHeaderField("Content-Type");
+                return binary
+            } finally {
+                inputStream.close()
+            }
+        }  catch (ex: FileNotFoundException) {
+            throw UnprocessableEntityException(ex.message)
         } catch (ex: IOException) {
             throw UnprocessableEntityException(ex.message)
         }

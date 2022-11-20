@@ -24,6 +24,7 @@ import org.hl7.fhir.r4.model.*
 import org.hl7.fhir.utilities.npm.NpmPackage
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
+import uk.nhs.nhsdigital.fhir.utility.awsProvider.AWSBinary
 import uk.nhs.nhsdigital.fhir.utility.awsProvider.AWSImplementationGuide
 import uk.nhs.nhsdigital.fhir.utility.interceptor.CognitoAuthInterceptor
 import uk.nhs.nhsdigital.fhir.utility.service.ImplementationGuideParser
@@ -43,6 +44,7 @@ import javax.servlet.http.HttpServletResponse
 class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: FhirContext,
                                   private val cognitoAuthInterceptor: CognitoAuthInterceptor,
                                   private val awsImplementationGuide: AWSImplementationGuide,
+                                  private val awsBinary: AWSBinary,
                                   private val implementationGuideParser: ImplementationGuideParser
 ) : IResourceProvider {
     companion object : KLogging()
@@ -66,6 +68,16 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         return list
     }
 
+    @Operation(name = "\$package", idempotent = true, manualResponse = true)
+    fun packageGet(
+        servletRequest: HttpServletRequest,
+        servletResponse: HttpServletResponse,
+        @OperationParam(name="name") igNameParameter : String,
+        @OperationParam(name="version") igVersionParameter : String
+    )
+    {
+
+    }
     @Operation(name = "\$cacheIG", idempotent = true)
     fun cacheIG(
         servletRequest: HttpServletRequest,
@@ -116,7 +128,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
             // Fire (FHIR) and forget
 
             GlobalScope.launch {
-                expandIg(name, version, packages)
+                expandIg(outcome, name, version, packages)
             }
 
 
@@ -126,7 +138,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
     }
 
 
-    private fun expandIg(name: String?, version: String?, packages: List<NpmPackage>) {
+    private fun expandIg(implementationGuide: ImplementationGuide, name: String?, version: String?, packages: List<NpmPackage>) {
         println("delay started")
         //  delay(123123)
         val supportChain = ValidationSupportChain(
@@ -140,7 +152,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         var allOk = true
         for (profile in profiles) {
             if (profile.hasSnapshot()) {
-                logger.warn(profile.url + " NO Snapshot")
+                logger.error(profile.url + " NO Snapshot")
                 val found = supportChain.fetchStructureDefinition(profile.url)
                 if (found != null) {
                     println("Found it")
@@ -152,12 +164,31 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         }
         if (allOk)
         {
-            println("We are all clear to cache the package!")
-            val npmPackage = packages[0]
-            npmPackage.save(File("package"))
-            // Follow same convention as simplifier
-            Files.move(File("package/"+name+"/examples").toPath(), File("package/"+name+"/package/examples").toPath(), StandardCopyOption.REPLACE_EXISTING);
-            CreateTarGZ("package/"+name  ,name+"-"+version+".tgz")
+            for (npmPackage in packages) {
+                if (npmPackage.name().equals(name) && npmPackage.version().equals(version)) {
+                    npmPackage.save(File("package"))
+                    // Follow same convention as simplifier
+                    Files.move(
+                        File("package/" + name + "/examples").toPath(),
+                        File("package/" + name + "/package/examples").toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    );
+                    val outputFilename=name + "-" + version + ".tgz"
+                    CreateTarGZ("package/" + name,outputFilename )
+                    val outcome = awsBinary.create(outputFilename)
+                    if (outcome != null && outcome.resource != null && outcome.resource is Binary) {
+                        var binary : Binary = outcome.resource as Binary
+                        implementationGuide.addExtension(
+                            Extension()
+                                .setUrl("https://fhir.nhs.uk/StructureDefinition/Extension-IGPackage")
+                                .setValue(Reference()
+                                    .setReference("Binary/"+binary.id))
+                        )
+                        awsImplementationGuide.createUpdate(implementationGuide)
+                    }
+                }
+            }
+
         }
     }
 
