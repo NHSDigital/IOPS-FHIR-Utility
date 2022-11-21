@@ -114,7 +114,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         val implementationGuide = ImplementationGuide()
         var version = igVersionParameter ?: servletRequest.getParameter("version")
         var name = igNameParameter ?: servletRequest.getParameter("name")
-        val packages = downloadPackage(name, version)
+        var packages = downloadPackage(name, version)
         for (packageEntry in packages) {
             if ((packageEntry.npm != null) && packageEntry.npm.isJsonObject) {
                  val igDetails=packageEntry.npm
@@ -157,11 +157,11 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
             }
             GlobalScope.launch {
                 expandIg(implementationGuideNew, name, version, packages)
+                packages = emptyList()
             }
-
-
             return implementationGuideNew
         }
+
         return null
     }
 
@@ -169,7 +169,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
     private fun expandIg(implementationGuide: ImplementationGuide, name: String?, version: String?, packages: List<NpmPackage>) {
         println("delay started")
         //  delay(123123)
-        val supportChain = ValidationSupportChain(
+        var supportChain = ValidationSupportChain(
             DefaultProfileValidationSupport(fhirContext),
             SnapshotGeneratingValidationSupport(fhirContext),
         )
@@ -231,6 +231,9 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                 val file = File(outputFilename).delete()
             }
         }
+        // Try to empty chain
+        supportChain = ValidationSupportChain()
+
     }
 
     @Throws(IOException::class)
