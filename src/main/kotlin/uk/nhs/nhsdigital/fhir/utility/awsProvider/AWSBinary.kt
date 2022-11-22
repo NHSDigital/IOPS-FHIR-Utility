@@ -51,7 +51,18 @@ class AWSBinary(val messageProperties: MessageProperties, val awsClient: IGeneri
         return bundle.entryFirstRep.resource as ImplementationGuide
     }
 
-
+    fun get(internalId: IdType): Binary {
+        val binary = Binary()
+        var path = internalId.value
+        if (!path.startsWith("/")) path = "/" + path
+        val location = cognitoAuthInterceptor.getBinaryLocation(path)
+        println(location.getString("presignedGetUrl"))
+        binary.id = location.getString("id")
+        binary.contentType = location.getString("contentType")
+        val conn = cognitoAuthInterceptor.getBinary(location.getString("presignedGetUrl"))
+        binary.data = conn.inputStream.readAllBytes()
+        return binary
+    }
 
     public fun create(fileName : String): MethodOutcome? {
 

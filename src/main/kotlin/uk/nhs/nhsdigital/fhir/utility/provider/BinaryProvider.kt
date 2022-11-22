@@ -19,7 +19,7 @@ import javax.servlet.http.HttpServletRequest
 @Component
 class BinaryProvider(@Qualifier("R4") private val fhirContext: FhirContext,
                      private val cognitoAuthInterceptor: CognitoAuthInterceptor,
-                     private val awsBInary: AWSBinary,
+                     private val awsBinary: AWSBinary,
 
 ) : IResourceProvider {
     companion object : KLogging()
@@ -29,12 +29,8 @@ class BinaryProvider(@Qualifier("R4") private val fhirContext: FhirContext,
     }
 
     @Read
-    fun read( httpRequest : HttpServletRequest,@IdParam internalId: IdType): Binary? {
-        val json = cognitoAuthInterceptor.getBinaryLocation(httpRequest.pathInfo)
-        /// BLAH
-        val preSignedUrl = json.getString("presignedGetUrl")
-       // Using direct return at present return cognitoAuthInterceptor.getBinary(preSignedUrl)
-        return null
+    fun read(httpRequest : HttpServletRequest, @IdParam internalId: IdType): Binary? {
+        return awsBinary.get(internalId)
     }
 
 }
