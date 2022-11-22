@@ -81,7 +81,7 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
         } else {
             URL(url + path)
         }
-        val conn = myUrl.openConnection() as HttpURLConnection
+
 
         var retry = 2
         while (retry > 0) {
@@ -113,9 +113,7 @@ class CognitoAuthInterceptor(val messageProperties: MessageProperties,
                 } finally {
                     `is`.close()
                 }
-            } catch (ex: FileNotFoundException) {
-                null
-            } catch (ex: IOException) {
+            } catch (ex: Exception) {
                 retry--
                 if (ex.message != null) {
                     if (ex.message!!.contains("401") || ex.message!!.contains("403")) {
