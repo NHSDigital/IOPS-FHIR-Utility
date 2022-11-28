@@ -17,7 +17,7 @@
     <properties>
         <java.version>1.8</java.version>
         <kotlin.version>1.5.10</kotlin.version>
-        <fhir.version>6.2.0</fhir.version>
+        <fhir.version>6.2.1</fhir.version>
         <swagger_version>2.1.12</swagger_version>
         <parser_version>2.0.30</parser_version>
     </properties>
@@ -83,21 +83,13 @@
             <artifactId>hapi-fhir-server</artifactId>
             <version>${fhir.version}</version>
         </dependency>
-        <dependency>
-            <groupId>ca.uhn.hapi.fhir</groupId>
-            <artifactId>hapi-fhir-structures-r5</artifactId>
-            <version>${fhir.version}</version>
-        </dependency>
+
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-structures-r4</artifactId>
             <version>${fhir.version}</version>
         </dependency>
-        <dependency>
-            <groupId>ca.uhn.hapi.fhir</groupId>
-            <artifactId>hapi-fhir-structures-dstu3</artifactId>
-            <version>${fhir.version}</version>
-        </dependency>
+
         <dependency>
             <groupId>ca.uhn.hapi.fhir</groupId>
             <artifactId>hapi-fhir-validation</artifactId>
@@ -108,11 +100,7 @@
             <artifactId>hapi-fhir-validation-resources-r4</artifactId>
             <version>${fhir.version}</version>
         </dependency>
-        <dependency>
-            <groupId>ca.uhn.hapi.fhir</groupId>
-            <artifactId>hapi-fhir-validation-resources-dstu3</artifactId>
-            <version>${fhir.version}</version>
-        </dependency>
+
         <dependency>
             <groupId>io.github.microutils</groupId>
             <artifactId>kotlin-logging</artifactId>

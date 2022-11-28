@@ -17,7 +17,7 @@ import javax.servlet.Filter
 class ApplicationConfiguration {
     @Bean("R4")
     open fun fhirR4Context(): FhirContext {
-        val fhirContext = FhirContext.forR4()
+        val fhirContext = FhirContext.forR4Cached()
         fhirContext.setParserErrorHandler(StrictErrorHandler())
         return fhirContext
     }
