@@ -14,10 +14,10 @@ const val REGISTRATION_ID = "terminology"
 
 @Configuration
 @ConditionalOnProperty("terminology.authorization.tokenUrl")
-open class OAuth2ClientConfiguration(private val awsClientProperties: AWSClientProperties) {
+open class OAuth2ClientConfiguration(private val terminologyValidationProperties: TerminologyValidationProperties) {
     @Bean
     open fun clientRegistration(): ClientRegistration {
-        val authorization = awsClientProperties.authorization ?: throw Error("Missing authorization properties")
+        val authorization = terminologyValidationProperties.authorization ?: throw Error("Missing authorization properties")
         return ClientRegistration.withRegistrationId(REGISTRATION_ID)
             .clientId(authorization.clientId)
             .clientSecret(authorization.clientSecret)
@@ -44,3 +44,4 @@ open class OAuth2ClientConfiguration(private val awsClientProperties: AWSClientP
         )
     }
 }
+

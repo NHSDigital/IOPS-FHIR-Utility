@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConstructorBinding
 
 @ConstructorBinding
 @ConfigurationProperties(prefix = "terminology")
-data class AWSClientProperties(
+data class TerminologyValidationProperties(
     var url: String?,
     var authorization: Authorization?
 ) {

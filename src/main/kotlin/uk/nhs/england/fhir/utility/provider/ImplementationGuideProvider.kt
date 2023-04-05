@@ -21,6 +21,7 @@ import org.apache.commons.io.filefilter.RegexFileFilter
 import org.hl7.fhir.common.hapi.validation.support.SnapshotGeneratingValidationSupport
 import org.hl7.fhir.common.hapi.validation.support.ValidationSupportChain
 import org.hl7.fhir.r4.model.*
+import org.hl7.fhir.utilities.json.model.JsonProperty
 import org.hl7.fhir.utilities.npm.NpmPackage
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
@@ -118,10 +119,10 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
         for (packageEntry in packages) {
             if ((packageEntry.npm != null) && packageEntry.npm.isJsonObject) {
                  val igDetails=packageEntry.npm
-                val igName=igDetails.get("name").asString.replace("\"","")
-                val igDesc=igDetails.get("description").asString.replace("\"","")
-                val igVersion = igDetails.get("version").asString.replace("\"","")
-                val igAuthor=igDetails.get("author").asString.replace("\"","")
+                val igName=igDetails.get("name").asString().replace("\"","")
+                val igDesc=igDetails.get("description").asString().replace("\"","")
+                val igVersion = igDetails.get("version").asString().replace("\"","")
+                val igAuthor=igDetails.get("author").asString().replace("\"","")
                 if (igVersion.equals(version) && igName.equals(name)) {
                     implementationGuide.url="https://fhir.nhs.uk/ImplementationGuide/"+name+"-"+version
                     implementationGuide.description = igDesc
@@ -201,7 +202,7 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                         // Add new entry
                         val content = jsonParser.encodeResourceToString(supportChain.fetchStructureDefinition(entry.value.url))
                         if (content == null) throw UnprocessableEntityException("Error encoding "+entry.key)
-                        println("Readding  " + entry.key)
+                        println("Re-adding  " + entry.key)
                         npmPackage.addFile(folder.name,entry.key,content.toByteArray(),"StructureDefinition")
                     }
                 }
@@ -209,11 +210,15 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
                 // Saves the processed package
                 npmPackage.save(File("package"))
                 // Follow same convention as simplifier
-                Files.move(
-                    File("package/" + name + "/examples").toPath(),
-                    File("package/" + name + "/package/examples").toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                );
+                try {
+                    Files.move(
+                        File("package/" + name + "/examples").toPath(),
+                        File("package/" + name + "/package/examples").toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    );
+                } catch (ex : Exception) {
+                    logger.warn(ex.message);
+                }
                 val outputFilename=name + "-" + version + ".tgz"
                 CreateTarGZ("package/" + name,outputFilename )
                 val outcome = awsBinary.create(outputFilename)
@@ -364,21 +369,20 @@ class ImplementationGuideProvider(@Qualifier("R4") private val fhirContext: Fhir
 
         if (dependency.isJsonObject) {
 
-            val obj = dependency.asJsonObject
-
-            val entrySet: Set<Map.Entry<String?, JsonElement?>> = obj.entrySet()
-            for (entry in entrySet) {
-
-                if (entry.key != "hl7.fhir.r4.core") {
-                    val version = entry.value?.asString?.replace("\"","")
-                   if (entry.key != null && version != null) {
-                       val packs = downloadPackage(entry.key!!, version)
-                       if (packs.size > 0) {
-                           for (pack in packs) {
-                               packages.add(pack)
-                           }
-                       }
-                   }
+            val obj = dependency.asJsonObject()
+            val entrySet: MutableList<JsonProperty>? = obj.properties
+            entrySet?.forEach() {
+                logger.info(it.name + " version =  " + it.value)
+                if (it.name != "hl7.fhir.r4.core") {
+                    val entryVersion = it.value?.asString()?.replace("\"","")
+                    if (it.name != null && entryVersion != null) {
+                        val packs = downloadPackage(it.name!!, entryVersion)
+                        if (packs.size > 0) {
+                            for (pack in packs) {
+                                packages.add(pack)
+                            }
+                        }
+                    }
                 }
             }
         }
